@@ -58,7 +58,7 @@ Default tickers: AAPL, GOOGL, MSFT, AMZN, TSLA, NVDA, META, JPM, V, NFLX. Seed p
 ## Running Tests
 
 ```bash
-uv run --extra dev pytest -v              # All tests (210)
+uv run --extra dev pytest -v              # All tests (213)
 uv run --extra dev pytest --cov=app       # With coverage
 uv run --extra dev ruff check app/ tests/ # Lint
 ```

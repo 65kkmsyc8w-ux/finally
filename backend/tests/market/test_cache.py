@@ -88,6 +88,63 @@ def test_version_increments_on_every_update(cache: PriceCache):
     assert cache.version == 3
 
 
+def test_version_is_read_under_the_lock(cache: PriceCache):
+    """Every other accessor locks; an unlocked int read has no ordering
+    guarantee against the preceding dict write on a free-threaded build."""
+
+    class CountingLock:
+        def __init__(self, inner):
+            self._inner, self.acquisitions = inner, 0
+
+        def __enter__(self):
+            self.acquisitions += 1
+            return self._inner.__enter__()
+
+        def __exit__(self, *exc):
+            return self._inner.__exit__(*exc)
+
+    cache._lock = CountingLock(cache._lock)
+    assert cache.version == 0
+    assert cache._lock.acquisitions == 1
+
+
+def test_reading_version_does_not_deadlock_against_writes(cache: PriceCache):
+    """The lock is not reentrant, so a nested acquisition would hang here."""
+    cache.update("AAPL", 190.0)
+    assert cache.version == 1
+    assert len(cache) == 1
+    assert cache.get_price("AAPL") == 190.0  # get_price -> get, both lock
+    assert "AAPL" in cache
+
+
+def test_version_stays_readable_under_concurrent_writers():
+    cache = PriceCache()
+    seen: list[int] = []
+    stop = False
+
+    def writer(n: int) -> None:
+        for i in range(200):
+            cache.update(f"T{n}", 100.0 + i)
+
+    def reader() -> None:
+        while not stop:
+            seen.append(cache.version)
+
+    writers = [Thread(target=writer, args=(n,)) for n in range(5)]
+    watcher = Thread(target=reader)
+    watcher.start()
+    for thread in writers:
+        thread.start()
+    for thread in writers:
+        thread.join()
+    stop = True
+    watcher.join()
+
+    assert cache.version == 1000
+    assert seen == sorted(seen)  # monotonic: never observed going backwards
+    assert max(seen) <= 1000  # never ahead of the writes that completed
+
+
 def test_version_is_unchanged_by_reads_and_removes(cache: PriceCache):
     """SSE change detection must not fire on a read."""
     cache.update("AAPL", 190.0)
