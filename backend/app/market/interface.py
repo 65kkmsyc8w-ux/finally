@@ -5,53 +5,67 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 
+def normalize_ticker(ticker: str) -> str:
+    """Canonical ticker form: uppercase, whitespace stripped.
+
+    Massive's ticker matching is case-sensitive — `aapl` silently returns
+    nothing — and a ticker used as a dict key in two different cases would
+    produce two independent cache entries. Every entry point normalises:
+    source methods, watchlist routes, and trade execution.
+    """
+    return ticker.strip().upper()
+
+
 class MarketDataSource(ABC):
     """Contract for market data providers.
 
     Implementations push price updates into a shared PriceCache on their own
-    schedule. Downstream code never calls the data source directly for prices —
-    it reads from the cache.
+    schedule. Downstream code never asks a source for a price — note the
+    absence of any `get_price` here. That is the cache's job, and keeping it
+    off this interface is what stops callers coupling to a provider.
 
     Lifecycle:
         source = create_market_data_source(cache)
         await source.start(["AAPL", "GOOGL", ...])
-        # ... app runs ...
         await source.add_ticker("TSLA")
         await source.remove_ticker("GOOGL")
-        # ... app shutting down ...
         await source.stop()
     """
 
     @abstractmethod
     async def start(self, tickers: list[str]) -> None:
-        """Begin producing price updates for the given tickers.
+        """Begin producing price updates and start the background task.
 
-        Starts a background task that periodically writes to the PriceCache.
-        Must be called exactly once. Calling start() twice is undefined behavior.
+        Must seed the cache with at least one price per ticker *before*
+        returning, so a browser connecting immediately sees a populated
+        watchlist. Called exactly once; calling start() twice is undefined
+        behaviour.
         """
 
     @abstractmethod
     async def stop(self) -> None:
         """Stop the background task and release resources.
 
-        Safe to call multiple times. After stop(), the source will not write
-        to the cache again.
+        Idempotent, and must never raise — this runs inside FastAPI's lifespan
+        shutdown, where an exception produces an ugly traceback on Ctrl-C.
+        After stop(), the source never writes to the cache again.
         """
 
     @abstractmethod
     async def add_ticker(self, ticker: str) -> None:
         """Add a ticker to the active set. No-op if already present.
 
-        The next update cycle will include this ticker.
+        Eventually consistent: the simulator can seed a price instantly, the
+        Massive poller cannot until its next cycle.
         """
 
     @abstractmethod
     async def remove_ticker(self, ticker: str) -> None:
-        """Remove a ticker from the active set. No-op if not present.
+        """Remove a ticker from the active set *and evict it from the cache*.
 
-        Also removes the ticker from the PriceCache.
+        No-op if the ticker is not tracked.
         """
 
     @abstractmethod
     def get_tickers(self) -> list[str]:
-        """Return the current list of actively tracked tickers."""
+        """Currently tracked tickers. Synchronous — it reads in-memory state."""
