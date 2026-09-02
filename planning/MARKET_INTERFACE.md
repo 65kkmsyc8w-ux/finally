@@ -230,8 +230,12 @@ The counter is coarse — any write bumps it, so one changed ticker resends all 
 That is the right trade for a ten-ticker watchlist, where the whole payload is under a
 kilobyte and per-ticker diffing would cost more than it saves.
 
-Note that `version` is read outside the lock. On CPython an `int` attribute read is
-atomic, and a stale read costs at most one 500 ms cycle of latency.
+`version` is read under the lock, like every other accessor. An unlocked `int` read is
+atomic under the GIL, but it carries no ordering guarantee against the dict write that
+preceded it: on a free-threaded build (PEP 703) a reader could observe the bumped counter
+before the price it refers to is visible, and the stream would skip an update it was just
+told about. One uncontended acquisition twice a second per client is not worth reasoning
+about.
 
 ### `update()` derives `previous_price` itself
 

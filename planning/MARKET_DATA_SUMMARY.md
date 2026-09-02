@@ -1,6 +1,6 @@
 # Market Data Backend — Summary
 
-**Status:** Complete. 210 unit tests, 100% statement coverage, `ruff` clean.
+**Status:** Complete. 213 unit tests, 100% statement coverage, `ruff` clean.
 
 The implementation-level specification is [MARKET_DATA_DESIGN.md](MARKET_DATA_DESIGN.md);
 rationale lives in [MARKET_INTERFACE.md](MARKET_INTERFACE.md),
@@ -55,12 +55,12 @@ MarketDataSource (ABC)
 
 ## Test Suite
 
-**210 tests, 100% statement coverage** across 9 modules in `backend/tests/market/`.
+**213 tests, 100% statement coverage** across 9 modules in `backend/tests/market/`.
 
 | Module | Tests | Focus |
 |--------|-------|-------|
 | test_models.py | 12 | Immutability, slots, derived values, SSE payload shape |
-| test_cache.py | 17 | Rounding, previous-price derivation, versioning, concurrent writers |
+| test_cache.py | 20 | Rounding, previous-price derivation, version locking, concurrent readers and writers |
 | test_interface.py | 10 | `normalize_ticker`, ABC enforcement, the four-line fake source |
 | test_simulator.py | 35 | GBM statistics: realised vol, Itô drift, correlation, shock bounds, Cholesky robustness |
 | test_simulator_source.py | 14 | Lifecycle, cache seeding, loop fault tolerance |
@@ -116,7 +116,7 @@ trade with HTTP 503** — never fill at a fabricated price.
 ```bash
 cd backend
 uv sync --extra dev
-uv run pytest -q                      # 210 tests
+uv run pytest -q                      # 213 tests
 uv run pytest --cov=app               # coverage
 uv run ruff check app/ tests/         # lint
 uv run market_data_demo.py            # live terminal dashboard, 60s

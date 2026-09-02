@@ -3,6 +3,28 @@
 **Date:** 2026-02-10
 **Scope:** `backend/app/market/` (8 source files) and `backend/tests/market/` (6 test files)
 
+> **Status: all items resolved.** Every issue below has been fixed and the whole
+> subsystem rebuilt against [MARKET_DATA_DESIGN.md](../MARKET_DATA_DESIGN.md).
+> The suite is now 213 tests at 100% statement coverage, `ruff` clean.
+>
+> | Item | Resolution |
+> |---|---|
+> | 3.1 Build config | `[tool.hatch.build.targets.wheel] packages = ["app"]` present in `pyproject.toml` |
+> | 3.2 Massive test fragility | `massive` imports moved to module level; fixtures build real `UniversalSnapshot` objects via `from_dict()` instead of `Mock`, so a wrong field name fails the suite |
+> | 3.3 `_generate_events` annotation | Renamed `price_event_stream`, annotated `-> AsyncGenerator[str, None]` |
+> | 3.4 `version` not under lock | **Fixed here** — the property now acquires the lock; see `test_version_is_read_under_the_lock` |
+> | 3.5 Private state access | `GBMSimulator.get_tickers()` is public; `SimulatorDataSource` delegates to it |
+> | 3.6 Module-level router | `create_stream_router()` builds a fresh `APIRouter` per call |
+> | 3.7 Unused imports | `ruff check` clean across `app/` and `tests/` |
+> | 4.2 Missing SSE tests | `test_stream.py` — 14 tests covering frames, change detection, heartbeat, disconnect, router wiring |
+> | 4.2 No cache concurrency test | `test_cache.py` — concurrent writers, concurrent readers, version monotonicity |
+> | 4.2 No 10-ticker Cholesky test | `test_simulator.py` — full default watchlist plus a 50-ticker churn test asserting min eigenvalue 0.40 |
+> | 4.3 `DEFAULT_CORR` naming | Constant removed; unknown pairs use `CROSS_GROUP_CORR` |
+>
+> The review also predates two defects it could not have caught, both fixed in the
+> rebuild: `LastTrade.timestamp` does not exist (the Massive poller wrote nothing to the
+> cache), and `SimulatorDataSource` did not normalise tickers.
+
 ---
 
 ## 1. Test Results Summary

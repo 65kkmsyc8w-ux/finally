@@ -295,10 +295,12 @@ class PriceCache:
     def version(self) -> int:
         """Monotonic counter, bumped on every update. Drives SSE change detection.
 
-        Read without the lock: an int attribute read is atomic under CPython's
-        GIL, and a stale read costs at most one 500ms SSE cycle of latency.
+        Read under the lock, like every other accessor: an unlocked int read
+        is atomic under the GIL but carries no ordering guarantee against the
+        dict write that preceded it.
         """
-        return self._version
+        with self._lock:
+            return self._version
 
     def __len__(self) -> int:
         with self._lock:
