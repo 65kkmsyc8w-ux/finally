@@ -9,25 +9,40 @@ from .models import PriceUpdate
 
 
 class PriceCache:
-    """Thread-safe in-memory cache of the latest price for each ticker.
+    """Thread-safe store of the latest price for each ticker.
 
-    Writers: SimulatorDataSource or MassiveDataSource (one at a time).
-    Readers: SSE streaming endpoint, portfolio valuation, trade execution.
+    Writers: exactly one MarketDataSource (simulator or Massive poller).
+    Readers: SSE streaming, portfolio valuation, trade execution.
+
+    The cache derives `previous_price` itself, so sources only ever supply a
+    new price. Prices are rounded to 2dp on write — this is the single place
+    display precision is decided.
+
+    A threading.Lock (not asyncio.Lock) because the Massive poller writes from
+    a worker thread via asyncio.to_thread, while the simulator writes from the
+    event loop.
     """
 
     def __init__(self) -> None:
         self._prices: dict[str, PriceUpdate] = {}
         self._lock = Lock()
-        self._version: int = 0  # Monotonically increasing; bumped on every update
+        self._version: int = 0  # Monotonic; bumped on every update
 
-    def update(self, ticker: str, price: float, timestamp: float | None = None) -> PriceUpdate:
-        """Record a new price for a ticker. Returns the created PriceUpdate.
+    def update(
+        self,
+        ticker: str,
+        price: float,
+        timestamp: float | None = None,
+    ) -> PriceUpdate:
+        """Record a new price. Returns the stored PriceUpdate.
 
-        Automatically computes direction and change from the previous price.
-        If this is the first update for the ticker, previous_price == price (direction='flat').
+        On the first update for a ticker, previous_price == price, so
+        direction == 'flat' and the UI does not flash on page load.
         """
         with self._lock:
-            ts = timestamp or time.time()
+            # `if timestamp is None`, not `timestamp or ...`: a genuine 0.0
+            # timestamp must not be silently replaced by now().
+            ts = time.time() if timestamp is None else timestamp
             prev = self._prices.get(ticker)
             previous_price = prev.price if prev else price
 
@@ -42,28 +57,32 @@ class PriceCache:
             return update
 
     def get(self, ticker: str) -> PriceUpdate | None:
-        """Get the latest price for a single ticker, or None if unknown."""
+        """Latest update for one ticker, or None if unknown."""
         with self._lock:
             return self._prices.get(ticker)
 
     def get_all(self) -> dict[str, PriceUpdate]:
-        """Snapshot of all current prices. Returns a shallow copy."""
+        """Snapshot of every known price. Shallow copy — safe to iterate."""
         with self._lock:
             return dict(self._prices)
 
     def get_price(self, ticker: str) -> float | None:
-        """Convenience: get just the price float, or None."""
+        """Convenience accessor for just the price."""
         update = self.get(ticker)
         return update.price if update else None
 
     def remove(self, ticker: str) -> None:
-        """Remove a ticker from the cache (e.g., when removed from watchlist)."""
+        """Evict a ticker (called when it leaves the watchlist)."""
         with self._lock:
             self._prices.pop(ticker, None)
 
     @property
     def version(self) -> int:
-        """Current version counter. Useful for SSE change detection."""
+        """Monotonic counter, bumped on every update. Drives SSE change detection.
+
+        Read without the lock: an int attribute read is atomic under CPython's
+        GIL, and a stale read costs at most one SSE cycle of latency.
+        """
         return self._version
 
     def __len__(self) -> int:
